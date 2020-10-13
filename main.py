@@ -75,17 +75,17 @@ class DoublePendulum:
         self.angleLower = state[1]
         self.velUpper = state[2]
         self.velLower = state[3]
-        self.lenUpper = 1
-        self.lenLower = 1
-        self.massUpper = 1
-        self.massLower = 1
-        self.g = 9.81
 
     def setInitialPendulumState(self, state: list):
         self.initialAngleUpper = state[0]
         self.initialAngleLower = state[1]
         self.initialVelUpper = state[2]
         self.initialVelLower = state[3]
+        self.lenUpper = 1
+        self.lenLower = 1
+        self.massUpper = 1
+        self.massLower = 1
+        self.g = 9.81
 
     def tickAngleUpper(self, deltaT):
         return self.angleUpper + deltaT * self.velUpper
