@@ -1,6 +1,53 @@
 import math
 import random
+import turtle
+import time as thread
 
+
+def init_drawing():
+    global screen
+    screen = turtle.Screen()
+    screen.clear()
+    screen.tracer(0)
+    global don
+    don = turtle.Turtle()
+    don.speed(0)
+    don.width(3)
+    don.hideturtle()
+    don.radians()
+
+def draw_pendulum(dP):
+    don.dot(10)
+    don.setheading(dP.angleUpper - math.pi/2)
+
+    don.forward(dP.lenUpper * 100)
+    don.dot(10)
+    don.setheading(dP.angleLower - math.pi/2)
+    don.forward(dP.lenLower * 100)
+    don.dot(10)
+
+def draw_screen(i, t, pendulum):
+    global time_last_drawn
+
+    if t > 0 and (t - time_last_drawn) < 1.0 / 30:
+        return
+
+    don.home()
+    don.clear()
+
+    time_last_drawn = t
+    draw_pendulum(pendulum)
+    # write loop count
+    don.penup()
+    don.goto((250, 250))
+    don.pendown()
+    don.write("loop #%d, t=%0.3fsecs" % (i, t), True, font=("Arial", 12, "normal"))
+    # write time
+    don.penup()
+    don.goto((250, 225))
+    don.pendown()
+    don.write("Angles: %+6.2f, %+6.2f" % (pendulum.angleUpper / math.pi, pendulum.angleLower / math.pi), font=("Arial", 12, "normal"))
+    screen.update()
 
 class DoublePendulum:
     angleUpper: float
@@ -65,6 +112,9 @@ class DoublePendulum:
 def generateInitialState(range):
     return [random.random() * math.pi * 2, random.random() * math.pi * 2, (random.random() - .5) * 2 * range, (random.random() - .5) * 2 * range]
 
+
+init_drawing()
+
 pendulums = []
 
 pendulumCurrentStates = []
@@ -75,8 +125,10 @@ deltaT = 0.001
 time = 0
 
 for i in range(100):
-    pendulums.append(DoublePendulum(generateInitialState(1)))
+    pendulums.append(DoublePendulum(generateInitialState(2 * math.pi)))
     pendulumCurrentStates.append(pendulums[i].getState())
+
+pendulums[0] = DoublePendulum([math.pi, math.pi, 0, 0])
 
 for i in range (round(10 / deltaT)):
     print(pendulumCurrentStates)
@@ -85,6 +137,5 @@ for i in range (round(10 / deltaT)):
         j.setPendulumState(j.doTicks(deltaT))
     for j in pendulums:
         pendulumCurrentStates[pendulums.index(j)] = j.getState()
+    draw_screen(i, time, pendulums[0])
     time += deltaT
-
-
