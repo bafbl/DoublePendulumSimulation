@@ -2,7 +2,8 @@ import math
 import random
 import turtle
 import time as thread
-
+import pandas.core.frame
+import datetime
 
 def init_drawing():
     global screen
@@ -103,39 +104,82 @@ class DoublePendulum:
         return [self.tickAngleUpper(deltaT), self.tickAngleLower(deltaT), self.tickVelUpper(deltaT), self.tickVelLower(deltaT)]
 
     def getState(self):
-        return [self.angleUpper, self.angleUpper, self.velUpper, self.velLower]
+        return [self.angleUpper, self.angleLower, self.velUpper, self.velLower]
 
     def getInitialState(self):
         return [self.initialAngleUpper, self.initialAngleLower, self.initialVelUpper, self.initialVelLower]
 
 
 def generateInitialState(range):
-    return [random.random() * math.pi * 2, random.random() * math.pi * 2, (random.random() - .5) * 2 * range, (random.random() - .5) * 2 * range]
+    return [random.random() * math.pi * 2, random.random() * math.pi * 2, random.random() * range, random.random() * range]
 
 
 init_drawing()
 
 pendulums = []
 
+currTime = datetime.datetime.now()
+prevTime: datetime
+
 pendulumCurrentStates = []
 pendulumPreviousStates = []
+pendulumInitialStates = []
 
-deltaT = 0.001
+upperAngleDataFrame = pandas.DataFrame([])
+lowerAngleDataFrame = pandas.DataFrame([])
+upperVelDataFrame = pandas.DataFrame([])
+lowerVelDataFrame = pandas.DataFrame([])
+
+deltaT = 0.01
 
 time = 0
 
 for i in range(100):
-    pendulums.append(DoublePendulum(generateInitialState(2 * math.pi)))
+    pendulums.append(DoublePendulum(generateInitialState(1/2 * math.pi)))
     pendulumCurrentStates.append(pendulums[i].getState())
+    pendulumInitialStates.append(pendulums[i].getInitialState())
 
-pendulums[0] = DoublePendulum([math.pi, math.pi, 0, 0])
+InitialStatesFrame = pandas.DataFrame(pendulumInitialStates, columns=["Upper Angle", "Lower Angle", "Upper Vel", "Lower Vel"])
+InitialStatesFrame.to_excel('InitialData.xlsx', float_format="%.9f", index=False)
 
-for i in range (round(10 / deltaT)):
-    print(pendulumCurrentStates)
-    print(time)
-    for j in pendulums:
-        j.setPendulumState(j.doTicks(deltaT))
-    for j in pendulums:
-        pendulumCurrentStates[pendulums.index(j)] = j.getState()
-    draw_screen(i, time, pendulums[0])
-    time += deltaT
+for n in range(20):
+    for i in range(round(10 / deltaT)):
+        #print(pendulumCurrentStates)
+        #print(time)
+        for j in pendulums:
+            j.setPendulumState(j.doTicks(deltaT))
+        #for j in pendulums:
+        #    pendulumCurrentStates[pendulums.index(j)] = j.getState()
+        #draw_screen(i, time, pendulums[0])
+        time += deltaT
+
+    for i in pendulums:
+        pendulumCurrentStates[pendulums.index(i)] = i.getState()
+        i.setPendulumState(i.getInitialState())
+
+    pendulums[0] = DoublePendulum([math.pi/2, math.pi/2, 0 ,0])
+
+    currentData = pandas.DataFrame(pendulumCurrentStates, columns=[deltaT.__str__() + " Upper Angle", deltaT.__str__() + " Lower Angle", deltaT.__str__() + " Upper Vel", deltaT.__str__() + " Lower Vel"])
+
+    upperAngleDataFrame[deltaT] = currentData.get(deltaT.__str__() + " Upper Angle")
+    lowerAngleDataFrame[deltaT] = currentData.get(deltaT.__str__() + " Lower Angle")
+    upperVelDataFrame[deltaT] = currentData.get(deltaT.__str__() + " Upper Vel")
+    lowerVelDataFrame[deltaT] = currentData.get(deltaT.__str__() + " Lower Vel")
+
+    pendulumPreviousStates = pendulumCurrentStates
+    print(deltaT)
+    deltaT = deltaT / 2
+    time = 0
+    with pandas.ExcelWriter('Data.xlsx', mode='w') as writer:
+        upperAngleDataFrame.to_excel(writer, sheet_name="UpperAngles", float_format="%.9f", index=False)
+        lowerAngleDataFrame.to_excel(writer, sheet_name="LowerAngles", float_format="%.9f", index=False)
+        upperVelDataFrame.to_excel(writer, sheet_name="UpperVelocities", float_format="%.9f", index=False)
+        lowerVelDataFrame.to_excel(writer, sheet_name="LowerVelocities", float_format="%.9f", index=False)
+    print("spreadsheet updated")
+    prevTime = currTime
+    currTime = datetime.datetime.now()
+    delta = currTime - prevTime
+    expected = currTime + 2 * delta
+    print("Time taken: " + delta.__str__() + " Expected next: " + expected.__str__())
+
+print(upperAngleDataFrame)
