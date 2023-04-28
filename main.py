@@ -10,6 +10,10 @@ import datetime
 from multiprocessing import Pool
 import sys
 import getopt
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+from matplotlib.colors import ListedColormap, BoundaryNorm
 
 from multiprocessing import Pool, TimeoutError
 
@@ -49,7 +53,7 @@ def draw_screen(pendulums, force=False):
     global time_last_drawn
 
     #draw at most 60fps
-    if not force and time_last_drawn and (pendulum.t - time_last_drawn) < 1.0 / 60:
+    if not force and time_last_drawn and (pendulums[0].t - time_last_drawn) < 1.0 / 60:
         return
     #All the pendulums should have the same time, so just pick the first one
     time_last_drawn = pendulums[0].t
@@ -110,8 +114,8 @@ class DoublePendulum:
 
     def setInitialPendulumState(self, state: list):
         self.t=0
-        self.initialAngleUpper = self.angleUpper = state[0]
-        self.initialAngleLower = self.angleLower = state[1]
+        self.initialAngleUpper = self.angleUpper = state[0] % (2 * math.pi)
+        self.initialAngleLower = self.angleLower = state[1] % (2 * math.pi)
         self.initialVelUpper = self.velUpper = state[2]
         self.initialVelLower = self.velLower = state[3]
         self.lenUpper = 1
@@ -141,8 +145,8 @@ class DoublePendulum:
 
     def doTick(self):
         #print('doTick(%.2f, %.5e)' % (self.t,self.deltaT))
-        newAngleUpper = self.tickAngleUpper()
-        newAngleLower = self.tickAngleLower()
+        newAngleUpper = self.tickAngleUpper() % (2 * math.pi)
+        newAngleLower = self.tickAngleLower() % (2 * math.pi)
         newVelUpper = self.tickVelUpper()
         newVelLower = self.tickVelLower()
 
@@ -301,6 +305,49 @@ def run_pendulums_collect_data():
 
         print(upperAngleDataFrame)
 
+def graph_evolution(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, framerate: int = 60, simTime: int = 20):
+    """
+    iThetaA: initial angle of first arm (in radians, so 1/2 corresponds to pi radians or 180 degrees)
+    iThetaB: initial angle of second arm
+    iVelA: initial angular velocity of first arm
+    iVelB: initial angular velocity of second arm
+    """
+
+    init_drawing()
+
+    localDT = 0.0001
+    p = DoublePendulum("pendy", [iThetaA * math.pi, iThetaB * math.pi, iVelA * math.pi, iVelB * math.pi], localDT)
+
+    iterations = framerate * simTime
+    t = np.linspace(0, simTime, iterations)
+    x = np.zeros(iterations)
+    y = np.zeros(iterations)
+    for i in range(iterations):
+        p.doAllTicks(p.t + 1.0/framerate)
+        #print(p)
+        draw_screen([p])
+        print("%.5f\t"%p.t, end="")
+        print("%.8f\t%.8f\t%.8f\t%.8f" % tuple(p.getState()))
+        x[i] = math.sin(p.angleUpper) + math.sin(p.angleLower)
+        y[i] = -math.cos(p.angleUpper) - math.cos(p.angleLower)
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    fig, axs = plt.subplots(1, 1, sharex = True, sharey = True)
+
+    # Create a continuous norm to map from data points to colors
+    norm = plt.Normalize(0, simTime)
+    lc = LineCollection(segments, cmap = 'rainbow', norm = norm)
+    # Set the values used for colormapping
+    lc.set_array(t)
+    lc.set_linewidth(2)
+    line = axs.add_collection(lc)
+    fig.colorbar(line, ax = axs)
+    axs.set_xlim(-2.125, 2.125)
+    axs.set_ylim(-2.125, 2.125)
+    plt.show()
+    tt.sleep(90)
+
 
 pendulums = []
 cpus=1
@@ -313,8 +360,10 @@ animation_spacing_x=220
 show_animation_data=True
 seed=tt.time()
 
-
 def main(argv):
+    graph_evolution(float(argv[0]), float(argv[1]), float(argv[2]), float(argv[3]))
+
+def xmain(argv):
     global cpus
     global deltaT_round0
     global rounds
