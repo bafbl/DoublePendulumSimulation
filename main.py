@@ -24,6 +24,8 @@ colors = ("black","RoyalBlue","LightSkyBlue",\
 
 def init_drawing():
     global screen
+    global point_history
+
     screen = turtle.Screen()
     screen.clear()
     screen.tracer(False)
@@ -34,7 +36,7 @@ def init_drawing():
     don.hideturtle()
     don.radians()
 
-def draw_pendulum(x, y, dP):
+def draw_pendulum(x, y, dP, trace_history=False):
     #print('Drawing %s'%(dP,))
     don.penup()
     don.goto((x,y))
@@ -47,9 +49,17 @@ def draw_pendulum(x, y, dP):
     don.setheading(dP.angleLower - math.pi/2)
     don.forward(dP.lenLower * 100)
     don.dot(10)
+    if trace_history:
+        dP.point_history.append(don.position())
+
+        for p in dP.point_history:
+            don.penup()
+            don.goto(p)
+            don.pendown()
+            don.dot(2, "blue")
 
 time_last_drawn=None
-def draw_screen(pendulums, force=False):
+def draw_screen(pendulums, force=False, trace_history=False):
     global time_last_drawn
 
     #draw at most 60fps
@@ -64,7 +74,7 @@ def draw_screen(pendulums, force=False):
     for i in range(len(pendulums)):
       pendulum=pendulums[i]
       don.pencolor(colors[i % len(colors)])
-      draw_pendulum(-animation_start_x+animation_spacing_x*i, 0, pendulum)
+      draw_pendulum(-animation_start_x+animation_spacing_x*i, 0, pendulum, trace_history)
 
       if show_animation_data:
         don.penup()
@@ -100,6 +110,8 @@ class DoublePendulum:
     massLower: float
     g: float
 
+    point_history=[]
+
     def __init__(self, myName: str, state: list, deltaT=0.001):
         self.myName=myName
         self.setInitialPendulumState(state)
@@ -123,6 +135,7 @@ class DoublePendulum:
         self.massUpper = 1
         self.massLower = 1
         self.g = 9.81
+        self.point_history = []
 
     def resetToInitialState(self):
         self.angleUpper = self.initialAngleUpper
@@ -130,6 +143,7 @@ class DoublePendulum:
         self.velUpper = self.initialVelUpper
         self.velLower = self.initialVelLower
         self.t=0
+        self.point_history=[]
 
     def tickAngleUpper(self):
         return self.angleUpper + self.deltaT * self.velUpper
@@ -320,33 +334,51 @@ def graph_evolution(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, 
 
     iterations = framerate * simTime
     t = np.linspace(0, simTime, iterations)
-    x = np.zeros(iterations)
-    y = np.zeros(iterations)
+    pathX = np.zeros(iterations)
+    pathY = np.zeros(iterations)
+    velUp = np.zeros(iterations)
+    velLow = np.zeros(iterations)
     for i in range(iterations):
         p.doAllTicks(p.t + 1.0/framerate)
         #print(p)
         draw_screen([p])
         print("%.5f\t"%p.t, end="")
         print("%.8f\t%.8f\t%.8f\t%.8f" % tuple(p.getState()))
-        x[i] = math.sin(p.angleUpper) + math.sin(p.angleLower)
-        y[i] = -math.cos(p.angleUpper) - math.cos(p.angleLower)
-    points = np.array([x, y]).T.reshape(-1, 1, 2)
-    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        pathX[i] = math.sin(p.angleUpper) + math.sin(p.angleLower)
+        pathY[i] = -math.cos(p.angleUpper) - math.cos(p.angleLower)
+        velUp[i] = p.velUpper
+        velLow[i] = p.velLower
 
-    fig, axs = plt.subplots(1, 1, sharex = True, sharey = True)
+    pathPoints = np.array([pathX, pathY]).T.reshape(-1, 1, 2)
+    pathSegments = np.concatenate([pathPoints[:-1], pathPoints[1:]], axis=1)
+    velPoints = np.array([velUp, velLow]).T.reshape(-1, 1, 2)
+    velSegments = np.concatenate([velPoints[:-1], velPoints[1:]], axis=1)
+
+    fig, axs = plt.subplots(2, 1, sharex = False, sharey = False)
 
     # Create a continuous norm to map from data points to colors
     norm = plt.Normalize(0, simTime)
-    lc = LineCollection(segments, cmap = 'rainbow', norm = norm)
+    pathlc = LineCollection(pathSegments, cmap = 'rainbow', norm = norm)
+    vellc = LineCollection(velSegments, cmap = 'rainbow', norm = norm)
     # Set the values used for colormapping
-    lc.set_array(t)
-    lc.set_linewidth(2)
-    line = axs.add_collection(lc)
-    fig.colorbar(line, ax = axs)
-    axs.set_xlim(-2.125, 2.125)
-    axs.set_ylim(-2.125, 2.125)
+    pathlc.set_array(t)
+    pathlc.set_linewidth(2)
+
+    vellc.set_array(t)
+    vellc.set_linewidth(2)
+
+    pathLine = axs[0].add_collection(pathlc)
+    fig.colorbar(pathLine, ax=axs[0])
+
+    velLine = axs[1].add_collection(vellc)
+    fig.colorbar(velLine, ax=axs[1])
+
+    axs[0].set_xlim(-2.125, 2.125)
+    axs[0].set_ylim(-2.125, 2.125)
+    axs[1].set_xlim(velUp.min()*1.05, velUp.max()*1.05)
+    axs[1].set_ylim(velLow.min()*1.05, velLow.max()*1.05)
     plt.show()
-    tt.sleep(90)
+    #input("Press Enter to stop...")
 
 
 pendulums = []
