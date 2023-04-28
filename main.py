@@ -139,7 +139,7 @@ class DoublePendulum:
     def tickVelLower(self):
         return self.velLower + self.deltaT * ((2 * math.sin(self.angleUpper - self.angleLower) * (math.pow(self.velUpper, 2) * self.lenUpper * (self.massUpper + self.massLower) + self.g * (self.massUpper + self.massLower) * math.cos(self.angleUpper) + math.pow(self.velLower, 2) * self.lenLower * self.massLower * math.cos(self.angleUpper - self.angleLower))) / (self.lenLower * (2 * self.massUpper + self.massLower - self.massLower * math.cos(2 * self.angleUpper - 2 * self.angleLower))))
 
-    def doTicks(self):
+    def doTick(self):
         #print('doTick(%.2f, %.5e)' % (self.t,self.deltaT))
         newAngleUpper = self.tickAngleUpper()
         newAngleLower = self.tickAngleLower()
@@ -155,7 +155,7 @@ class DoublePendulum:
     def doAllTicks(self, stopT):
         # print('Processing pendulum %s' % (self,))
         while self.t < stopT:
-            self.doTicks()
+            self.doTick()
 
     def getState(self):
         return [self.angleUpper, self.angleLower, self.velUpper, self.velLower]
@@ -326,22 +326,6 @@ def main(argv):
     global seed
     global pendulums
 
-    currTime = datetime.datetime.now()
-    prevTime: datetime
-
-    pendulumCurrentStates = []
-    pendulumPreviousStates = []
-    pendulumInitialStates = []
-
-    upperAngleDataFrame = pandas.DataFrame([])
-    lowerAngleDataFrame = pandas.DataFrame([])
-    upperVelDataFrame = pandas.DataFrame([])
-    lowerVelDataFrame = pandas.DataFrame([])
-
-    deltaT = 0.01
-
-    time = 0
-
     mode = 'run_and_save_data'
     usage='test.py [--pendulum_count <number>] [--cpus <number>] [--duration <secs>] [--deltaT_round0 <interval>] [--rounds <rounds>] [--seed <random seed>] [--mode <mode>] [--animation_start_x <x-coord>] [--animation_spacing_x <pixels>] [--hide_animation_data]'
     try:
@@ -380,8 +364,6 @@ def main(argv):
 
     for i in range(pendulum_count):
         pendulums.append(DoublePendulum("Pendulum #%d" % i, generateInitialState(1 / 2 * math.pi)))
-        pendulumCurrentStates.append(pendulums[i].getState())
-        pendulumInitialStates.append(pendulums[i].getInitialState())
 
 
     if mode == 'run_and_save_data':
