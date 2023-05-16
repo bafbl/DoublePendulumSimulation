@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap, BoundaryNorm
 
-from multiprocessing import Pool, TimeoutError
+from multiprocessing import Pool, TimeoutError, Array
 
 # taken from https://www.ncl.ucar.edu/Document/Graphics/named_colors.shtml
 colors = ("black","RoyalBlue","LightSkyBlue",\
@@ -85,10 +85,10 @@ def draw_screen(pendulums, force=False, trace_history=False):
 
 def normalize_angle(angle):
     if (angle >= 2*math.pi):
-      return angle-2*math.pi;
+      return angle-2*math.pi
     if ( angle<0 ):
-      return angle+2*math.pi;
-    return angle;
+      return angle+2*math.pi
+    return angle
 
 class DoublePendulum:
     t: float
@@ -98,6 +98,8 @@ class DoublePendulum:
     angleLower: float
     velUpper: float
     velLower: float
+    tipX: float
+    tipY: float
 
     initialAngleUpper: float
     initialAngleLower: float
@@ -181,17 +183,38 @@ class DoublePendulum:
     def getInitialState(self):
         return [self.initialAngleUpper, self.initialAngleLower, self.initialVelUpper, self.initialVelLower]
 
+    def updCartesian(self):
+        self.tipX = math.sin(self.angleUpper) + math.sin(self.angleLower)
+        self.tipY = -math.cos(self.angleUpper) - math.cos(self.angleLower)
+
+    def beginTrace(self, iterations):
+        self.pathX = np.zeros(iterations)
+        self.pathY = np.zeros(iterations)
+        self.velHisUp = np.zeros(iterations)
+        self.velHisLow = np.zeros(iterations)
+
+    def raceShadowP(self, scaleFactor, divergenceThreshold, maxTime):
+        p2 = DoublePendulum("shadow", [parameter * scaleFactor for parameter in self.getInitialState()], self.deltaT)
+        diffUnsigned = 0
+        while (self.t <= maxTime) and (diffUnsigned < divergenceThreshold):
+            for pendulum in [self , p2]:
+                pendulum.doAllTicks(pendulum.t + 1.0 / 63)
+                pendulum.updCartesian()
+            diff = math.sqrt((self.tipX - p2.tipX) ** 2 + (self.tipY - p2.tipY) ** 2)
+            diffUnsigned += diff
+        return self
+
 
 def generateInitialState(range):
     return [random.random() * math.pi * 2, random.random() * math.pi * 2, random.random() * range, random.random() * range]
 
-def process_pendulum(p, stopT):
-    p.doAllTicks(stopT)
-    return p
 
-def process_pendulum(p, stopT):
-    p.doAllTicks(stopT)
-    return p
+def process_pendulum(p, scaleFactor, divergenceThreshold, maxTime):
+    p.raceShadowP(scaleFactor, divergenceThreshold, maxTime)
+    return p.t
+#    global resultArray
+#    resultArray[int(p.myName)] = p.t
+
 
 
 def animate_pendulums(args):
@@ -319,7 +342,7 @@ def run_pendulums_collect_data():
 
         print(upperAngleDataFrame)
 
-def graph_evolution(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, framerate: int = 60, simTime: int = 20):
+def graph_evolution(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, framerate: int = 63, simTime: int = 20):
     """
     iThetaA: initial angle of first arm (in radians, so 1/2 corresponds to pi radians or 180 degrees)
     iThetaB: initial angle of second arm
@@ -381,19 +404,191 @@ def graph_evolution(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, 
     #input("Press Enter to stop...")
 
 
+def compare_two_pendulums(iThetaA: float, iThetaB: float, iVelA: float, iVelB: float, secondPScaling: list = [1.01, 1.0, 1.0, 1.0], framerate: int = 63, simTime: int = 20):
+    """
+    iThetaA: initial angle of first arm (in radians, so 1/2 corresponds to pi radians or 180 degrees)
+    iThetaB: initial angle of second arm
+    iVelA: initial angular velocity of first arm
+    iVelB: initial angular velocity of second arm
+    secondPScaling: how much each of the initial values (thetaA, thetaB, velA, velB) should be scaled by for the second pendulum
+    """
+
+    init_drawing()
+
+    localDT = 0.0001
+    p1 = DoublePendulum("pendy", [iThetaA * math.pi, iThetaB * math.pi, iVelA * math.pi, iVelB * math.pi], localDT)
+    p2 = DoublePendulum("offPendy", [value*scale for value,scale in zip([iThetaA * math.pi, iThetaB * math.pi, iVelA * math.pi, iVelB * math.pi], secondPScaling)], localDT)
+
+    iterations = framerate * simTime
+    t = np.linspace(0, simTime, iterations)
+    p1.beginTrace(iterations)
+    p2.beginTrace(iterations)
+    diffUnsigned = np.zeros(iterations)
+    for i in range(iterations):
+        for pendulum in [p1, p2]:
+            pendulum.doAllTicks(pendulum.t + 1.0 / framerate)
+
+            pendulum.pathX[i] = math.sin(pendulum.angleUpper) + math.sin(pendulum.angleLower)
+            pendulum.pathY[i] = -math.cos(pendulum.angleUpper) - math.cos(pendulum.angleLower)
+            pendulum.velHisUp[i] = pendulum.velUpper
+            pendulum.velHisLow[i] = pendulum.velLower
+            """
+            print("%.5f\t"%pendulum.t, end="")
+            print("%.8f\t%.8f\t%.8f\t%.8f" % tuple([v/math.pi for v in pendulum.getState()]))
+        print("")  # newline to make comparing values easier (pair up values)
+        """
+        diff = math.sqrt((p1.pathX[i] - p2.pathX[i])**2 + (p1.pathY[i] - p2.pathY[i])**2)
+        # diffSquares[i] = diff**2 + diffSquares[i-1]  # for the first element, the [i-1] is the last element, which will be 0, so the wraparound is helpful because no edge case conditional is needed (it gives 0)
+        diffUnsigned[i] = diff + diffUnsigned[i-1]
+        # draw_screen([p1, p2])
+
+    path1Points = np.array([p1.pathX, p1.pathY]).T.reshape(-1, 1, 2)
+    path1Segments = np.concatenate([path1Points[:-1], path1Points[1:]], axis=1)
+    path2Points = np.array([p2.pathX, p2.pathY]).T.reshape(-1, 1, 2)
+    path2Segments = np.concatenate([path2Points[:-1], path2Points[1:]], axis=1)
+
+    fig, axs = plt.subplots(2, 2, sharex = False, sharey = False)
+
+    # Create a continuous norm to map from data points to colors
+    norm = plt.Normalize(0, simTime)
+    path1lc = LineCollection(path1Segments, cmap = 'rainbow', norm = norm)
+    path2lc = LineCollection(path2Segments, cmap = 'rainbow', norm = norm)
+    # Set the values used for colormapping
+    path1lc.set_array(t)
+    path1lc.set_linewidth(0.9)
+
+    path2lc.set_array(t)
+    path2lc.set_linewidth(0.9)
+
+    path1Line = axs[0, 0].add_collection(path1lc)
+    fig.colorbar(path1Line, ax=axs[0, 0])
+
+    path2Line = axs[1, 0].add_collection(path2lc)
+    fig.colorbar(path2Line, ax=axs[1, 0])
+
+    axs[0, 0].set_xlim(-2.125, 2.125)
+    axs[0, 0].set_ylim(-2.125, 2.125)
+    axs[1, 0].set_xlim(-2.125 , 2.125)
+    axs[1, 0].set_ylim(-2.125 , 2.125)
+
+    axs[0 , 0].set_title('Pendulum 1')
+    axs[1 , 0].set_title('Pendulum 2')
+    axs[0 , 1].set_title('Abs Diff')
+    axs[0 , 1].plot(t , diffUnsigned)
+    axs[1 , 1].set_title('Log10(Abs Diff)')
+    axs[1 , 1].plot(t , [math.log(v,10) for v in diffUnsigned])
+
+    plt.show()
+    #input("Press Enter to stop...")
+
+
+def phase_diagram(iVelA: float, iVelB: float, resolution: int = 10, epsilon: float = 10.0, secondPScaling: list = [1.0, 1.001, 1.0, 1.0], framerate: int = 63, maxSimTime: int = 30):
+    """
+    iVelA: initial angular velocity of first arm
+    iVelB: initial angular velocity of second arm
+    resolution: bins of numpy array (will have shape of (resolution, resolution) )
+    epsilon: when the pendulums are considered to have diverged
+    secondPScaling: how much each of the initial values (thetaA, thetaB, velA, velB) should be scaled by for the second pendulum
+    """
+
+    # init_drawing()
+
+    localDT = 0.0001
+
+    timeToDiverge = np.empty(shape = (resolution,resolution))
+    p1 = DoublePendulum("pendy" , [0 , 0 , iVelA * math.pi , iVelB * math.pi] , localDT)
+    p2 = DoublePendulum("offPendy" , [value * scale for value , scale in zip([0 , 0 , iVelA * math.pi , iVelB * math.pi] , secondPScaling)] , localDT)
+    for thetaAIndex,thetaA in enumerate(np.linspace(0, math.pi, resolution)):
+        for thetaBIndex,thetaB in enumerate(np.linspace(0 , math.pi , resolution)):
+            p1.setInitialPendulumState([thetaA, thetaB, iVelA * math.pi, iVelB * math.pi])
+            p2.setInitialPendulumState([value * scale for value , scale in zip([thetaA , thetaB , iVelA * math.pi , iVelB * math.pi] , secondPScaling)])
+            p1.resetToInitialState()
+            p2.resetToInitialState()
+
+            diffUnsigned = 0
+            while (p1.t <= maxSimTime) and (diffUnsigned < epsilon):
+                for pendulum in [p1, p2]:
+                    pendulum.doAllTicks(pendulum.t + 1.0 / framerate)
+
+                    pendulum.tipX = math.sin(pendulum.angleUpper) + math.sin(pendulum.angleLower)
+                    pendulum.tipY = -math.cos(pendulum.angleUpper) - math.cos(pendulum.angleLower)
+                    """
+                    print("%.5f\t"%pendulum.t, end="")
+                    print("%.8f\t%.8f\t%.8f\t%.8f" % tuple([v/math.pi for v in pendulum.getState()]))
+                print("")  # newline to make comparing values easier (pair up values)
+                """
+                diff = math.sqrt((p1.tipX - p2.tipX)**2 + (p1.tipY - p2.tipY)**2)
+                diffUnsigned += diff
+            timeToDiverge[thetaAIndex, thetaBIndex] = p1.t
+            print("%.9f\t"%timeToDiverge[thetaAIndex, thetaBIndex], end="")
+            print([thetaAIndex,thetaBIndex])
+
+    fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
+    psm = plt.pcolormesh(timeToDiverge , rasterized = True , cmap = 'hot')
+    fig.colorbar(psm)
+
+    plt.show()
+    #input("Press Enter to stop...")
+
+def run_phase_diagram_collect_data():
+    global resolution
+    global pendulums
+    global shadowScaleFactor
+    global shadowDivergenceThreshold
+    global shadowMaxRuntime
+    global iVelA
+    global iVelB
+
+    for thetaAIndex,thetaA in enumerate(np.linspace(0, math.pi, resolution)):
+        for thetaBIndex,thetaB in enumerate(np.linspace(0 , math.pi , resolution)):
+            pendulums.append(DoublePendulum(str(resolution*thetaAIndex+thetaBIndex), [thetaA,thetaB,iVelA * math.pi, iVelB * math.pi], deltaT = 0.0005))
+
+    currTime = datetime.datetime.now()
+    prevTime: datetime
+
+    workerPool = Pool(processes = cpus)  # start worker processes
+
+
+    # Start running through the pendulums in separate processes
+    async_results = [workerPool.apply_async(process_pendulum , (p , shadowScaleFactor, shadowDivergenceThreshold, shadowMaxRuntime)) for p in pendulums]
+
+    # Collect the results from the workers
+    timeToDiverge = np.zeros((resolution , resolution))
+    for i in range(resolution):
+        for j in range(resolution):
+            timeToDiverge[i,j] = async_results[i*resolution+j].get()
+        fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
+        psm = plt.pcolormesh(timeToDiverge , rasterized = True , cmap = 'hot')
+        fig.colorbar(psm)
+        plt.show()
+
+
+resolution = 100
+shadowScaleFactor = 1.001
+shadowDivergenceThreshold = 10
+shadowMaxRuntime = 44
+iVelA = 0.1
+iVelB = 0.1
+
 pendulums = []
-cpus=1
+cpus=2
 deltaT_round0=0.01
 rounds=10
 pendulum_count=100
-simulation_duration=10
+simulation_duration = 30
 animation_start_x=275
 animation_spacing_x=220
 show_animation_data=True
 seed=tt.time()
+initialVars = [0.5 , 0.5 , 0 , 1.5]
+scalingVars = [1.001, 1.001, 1.001, 1.001]
+
 
 def main(argv):
-    graph_evolution(float(argv[0]), float(argv[1]), float(argv[2]), float(argv[3]))
+    # compare_two_pendulums(float(argv[0]), float(argv[1]), float(argv[2]), float(argv[3]))
+    # compare_two_pendulums(iThetaA = initialVars[0], iThetaB = initialVars[1], iVelA = initialVars[2], iVelB = initialVars[3], secondPScaling = scalingVars)
+    # phase_diagram(iVelA = 1.0, iVelB = 1.0, resolution = 240, epsilon = 10, secondPScaling = scalingVars)
+    run_phase_diagram_collect_data()
 
 def xmain(argv):
     global cpus
