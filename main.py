@@ -12,6 +12,7 @@ import sys
 import getopt
 import numpy as np
 import matplotlib.pyplot as plt
+import xlsxwriter
 from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap, BoundaryNorm
 
@@ -314,7 +315,7 @@ def run_pendulums_collect_data():
         pendulumCurrentStates = []
         for p in pendulums:
             pendulumCurrentStates.append(p.getState())
-            p.resetToInitialState();
+            p.resetToInitialState()
 
         currentData = pandas.DataFrame(pendulumCurrentStates,
                                        columns=[deltaT.__str__() + " Upper Angle", deltaT.__str__() + " Lower Angle",
@@ -538,40 +539,104 @@ def run_phase_diagram_collect_data():
     global shadowMaxRuntime
     global iVelA
     global iVelB
+    global upperThetaMin
+    global upperThetaMax
+    global lowerThetaMin
+    global lowerThetaMax
 
-    for thetaAIndex,thetaA in enumerate(np.linspace(0, math.pi, resolution)):
-        for thetaBIndex,thetaB in enumerate(np.linspace(0 , math.pi , resolution)):
-            pendulums.append(DoublePendulum(str(resolution*thetaAIndex+thetaBIndex), [thetaA,thetaB,iVelA * math.pi, iVelB * math.pi], deltaT = 0.0005))
-
-    currTime = datetime.datetime.now()
-    prevTime: datetime
+    for thetaAIndex,thetaA in enumerate(np.linspace(upperThetaMin * math.pi, upperThetaMax * math.pi, resolution)):
+        for thetaBIndex,thetaB in enumerate(np.linspace(lowerThetaMin * math.pi , lowerThetaMax * math.pi , resolution)):
+            pendulums.append(DoublePendulum(str(resolution*thetaAIndex+thetaBIndex), [thetaA,thetaB,iVelA * math.pi, iVelB * math.pi], deltaT = 0.001))
 
     workerPool = Pool(processes = cpus)  # start worker processes
-
 
     # Start running through the pendulums in separate processes
     async_results = [workerPool.apply_async(process_pendulum , (p , shadowScaleFactor, shadowDivergenceThreshold, shadowMaxRuntime)) for p in pendulums]
 
     # Collect the results from the workers
-    timeToDiverge = np.zeros((resolution , resolution))
-    for i in range(resolution):
-        for j in range(resolution):
-            timeToDiverge[i,j] = async_results[i*resolution+j].get()
-        fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
-        psm = plt.pcolormesh(timeToDiverge , rasterized = True , cmap = 'hot')
-        fig.colorbar(psm)
-        plt.show()
+    # timeToDiverge = np.zeros((resolution , resolution))
+    timeToDivergeDF = pandas.DataFrame(np.zeros((resolution , resolution)))
+    excelSheetName = str("u=%.3f-%.3fl=%.3f-%.3ft=%d"%tuple([upperThetaMin , upperThetaMax , lowerThetaMin , lowerThetaMax , shadowMaxRuntime]))
+        # t= : max time
+        # u= : upper angle range (min-max)
+        # l= : lower angle range (min-max)
+        # range is not included because it is simply the number of rows/columns
 
 
-resolution = 100
+
+    rowTimeToDiverge = np.zeros(resolution)
+    with pandas.ExcelWriter('AData.xlsx' , mode = 'w') as writer:
+        for i in range(resolution):
+            print("\nWorking on row %d at " % i , datetime.datetime.now() , "\n")
+            for j in range(resolution):
+                rowTimeToDiverge[j] = async_results[i*resolution+j].get()
+            timeToDivergeDF[i:(i+1)] = rowTimeToDiverge
+            # timeToDivergeDF.to_excel(writer , sheet_name = excelSheetName, float_format = "%.9f")
+        timeToDivergeDF.columns = np.linspace(upperThetaMin , upperThetaMax , resolution)
+        timeToDivergeDF.index = np.linspace(lowerThetaMin , lowerThetaMax , resolution)
+        timeToDivergeDF.to_excel(writer , sheet_name = excelSheetName , float_format = "%.9f")
+        writer.close()
+
+    """
+    workbook = writer.book
+    worksheet = writer.sheets[excelSheetName]
+
+    worksheet.conditional_format(1 , 1 , resolution + 1 , resolution + 1 , {'type': '3_color_scale',
+                                                                            'min_type': 'num' ,
+                                                                            'min_value': 0 ,
+                                                                            'min_color': "black" ,
+                                                                            'mid_type': 'num' ,
+                                                                            'mid_value': shadowMaxRuntime / 4 ,
+                                                                            'mid_color': "red" ,
+                                                                            'max_type': 'num' ,
+                                                                            'max_value': shadowMaxRuntime / 2 ,
+                                                                            'max_color': "orange"})
+    worksheet.conditional_format(1 , 1 , resolution + 1 , resolution + 1 , {'type': '3_color_scale' ,
+                                                                            'min_type': 'num' ,
+                                                                            'min_value': shadowMaxRuntime / 2 ,
+                                                                            'min_color': "orange" ,
+                                                                            'mid_type': 'num' ,
+                                                                            'mid_value': 3 * shadowMaxRuntime / 4 ,
+                                                                            'mid_color': "yellow" ,
+                                                                            'max_type': 'num' ,
+                                                                            'max_value': shadowMaxRuntime ,
+                                                                            'max_color': "white"})
+    writer.close()
+    
+    fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
+    psm = plt.pcolormesh(timeToDiverge , rasterized = True , cmap = 'hot')
+    fig.colorbar(psm)
+    plt.show()
+    """
+
+
+def plot_phase_diagram_from_excel(filepath: str, sheetName = 0):
+    df = pandas.read_excel(filepath, sheet_name = sheetName, index_col = 0)
+
+    fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
+    psm = plt.pcolormesh(df , rasterized = True , cmap = 'hot')
+    fig.colorbar(psm)
+    plt.show()
+
+
+spreadsheetFilepath = "AData.xlsx"
+
+resolution = 360
 shadowScaleFactor = 1.001
 shadowDivergenceThreshold = 10
-shadowMaxRuntime = 44
-iVelA = 0.1
-iVelB = 0.1
+shadowMaxRuntime = 60
+
+# in pi radians (so a value of 0.5 corresponds to 0.5pi radians)
+iVelA = 0.5
+iVelB = 0.5
+upperThetaMin = 0.0
+upperThetaMax = 1.0
+lowerThetaMin = 0.0
+lowerThetaMax = 1.0
+
 
 pendulums = []
-cpus=2
+cpus=8
 deltaT_round0=0.01
 rounds=10
 pendulum_count=100
@@ -589,6 +654,7 @@ def main(argv):
     # compare_two_pendulums(iThetaA = initialVars[0], iThetaB = initialVars[1], iVelA = initialVars[2], iVelB = initialVars[3], secondPScaling = scalingVars)
     # phase_diagram(iVelA = 1.0, iVelB = 1.0, resolution = 240, epsilon = 10, secondPScaling = scalingVars)
     run_phase_diagram_collect_data()
+    # plot_phase_diagram_from_excel(spreadsheetFilepath)
 
 def xmain(argv):
     global cpus
