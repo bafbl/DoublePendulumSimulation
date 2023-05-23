@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import xlsxwriter
 from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap, BoundaryNorm
+from tqdm import tqdm
 
 from multiprocessing import Pool, TimeoutError, Array
 
@@ -563,8 +564,8 @@ def run_phase_diagram_collect_data():
         # resolution is not included because it is simply the number of rows/columns
 
     rowTimeToDiverge = np.zeros(resolution)
-    for i in range(resolution):
-        print("Working on row %d at " % i , datetime.datetime.now().replace(microsecond=0))
+    print("Starting simulation at ", datetime.datetime.now().replace(microsecond = 0))
+    for i in tqdm(range(resolution)):
         for j in range(resolution):
             rowTimeToDiverge[j] = async_results[i*resolution+j].get()
         timeToDivergeDF[i:(i+1)] = rowTimeToDiverge
