@@ -115,11 +115,12 @@ class DoublePendulum:
 
     point_history=[]
 
-    def __init__(self, myName: str, state: list, deltaT=0.001):
+    def __init__(self, myName: str, state: list, deltaT=0.001, creationMessage = True):
         self.myName=myName
         self.setInitialPendulumState(state)
         self.setDeltaT(deltaT)
-        print('Created pendulum %s' %(self,))
+        if creationMessage:
+            print('Created pendulum %s' %(self,))
 
     def __str__(self):
         return 'P%s [t=%.1f tick=%0.2e sec (%.0f/sec)]: %.1fpi|%.1fpi/s - %.1fm - %.1fkg- %.1fpi|%.1fpi/s - %.1fm - %.1fkg' % (self.myName, self.t, self.deltaT, 1/self.deltaT, self.angleUpper/math.pi, self.velUpper/math.pi, self.lenUpper, self.massUpper, self.angleLower/math.pi, self.velLower/math.pi, self.lenLower, self.massLower)
@@ -195,7 +196,7 @@ class DoublePendulum:
         self.velHisLow = np.zeros(iterations)
 
     def raceShadowP(self, scaleFactor, divergenceThreshold, maxTime):
-        p2 = DoublePendulum("shadow", [parameter * scaleFactor for parameter in self.getInitialState()], self.deltaT)
+        p2 = DoublePendulum("shadow", [parameter * scaleFactor for parameter in self.getInitialState()], self.deltaT, creationMessage = False)
         diffUnsigned = 0
         while (self.t <= maxTime) and (diffUnsigned < divergenceThreshold):
             for pendulum in [self , p2]:
@@ -215,7 +216,6 @@ def process_pendulum(p, scaleFactor, divergenceThreshold, maxTime):
     return p.t
 #    global resultArray
 #    resultArray[int(p.myName)] = p.t
-
 
 
 def animate_pendulums(args):
@@ -560,54 +560,19 @@ def run_phase_diagram_collect_data():
         # t= : max time
         # u= : upper angle range (min-max)
         # l= : lower angle range (min-max)
-        # range is not included because it is simply the number of rows/columns
-
-
+        # resolution is not included because it is simply the number of rows/columns
 
     rowTimeToDiverge = np.zeros(resolution)
+    for i in range(resolution):
+        print("Working on row %d at " % i , datetime.datetime.now().replace(microsecond=0))
+        for j in range(resolution):
+            rowTimeToDiverge[j] = async_results[i*resolution+j].get()
+        timeToDivergeDF[i:(i+1)] = rowTimeToDiverge
+
     with pandas.ExcelWriter('AData.xlsx' , mode = 'w') as writer:
-        for i in range(resolution):
-            print("\nWorking on row %d at " % i , datetime.datetime.now() , "\n")
-            for j in range(resolution):
-                rowTimeToDiverge[j] = async_results[i*resolution+j].get()
-            timeToDivergeDF[i:(i+1)] = rowTimeToDiverge
-            # timeToDivergeDF.to_excel(writer , sheet_name = excelSheetName, float_format = "%.9f")
         timeToDivergeDF.columns = np.linspace(upperThetaMin , upperThetaMax , resolution)
         timeToDivergeDF.index = np.linspace(lowerThetaMin , lowerThetaMax , resolution)
         timeToDivergeDF.to_excel(writer , sheet_name = excelSheetName , float_format = "%.9f")
-        writer.close()
-
-    """
-    workbook = writer.book
-    worksheet = writer.sheets[excelSheetName]
-
-    worksheet.conditional_format(1 , 1 , resolution + 1 , resolution + 1 , {'type': '3_color_scale',
-                                                                            'min_type': 'num' ,
-                                                                            'min_value': 0 ,
-                                                                            'min_color': "black" ,
-                                                                            'mid_type': 'num' ,
-                                                                            'mid_value': shadowMaxRuntime / 4 ,
-                                                                            'mid_color': "red" ,
-                                                                            'max_type': 'num' ,
-                                                                            'max_value': shadowMaxRuntime / 2 ,
-                                                                            'max_color': "orange"})
-    worksheet.conditional_format(1 , 1 , resolution + 1 , resolution + 1 , {'type': '3_color_scale' ,
-                                                                            'min_type': 'num' ,
-                                                                            'min_value': shadowMaxRuntime / 2 ,
-                                                                            'min_color': "orange" ,
-                                                                            'mid_type': 'num' ,
-                                                                            'mid_value': 3 * shadowMaxRuntime / 4 ,
-                                                                            'mid_color': "yellow" ,
-                                                                            'max_type': 'num' ,
-                                                                            'max_value': shadowMaxRuntime ,
-                                                                            'max_color': "white"})
-    writer.close()
-    
-    fig , axs = plt.subplots(1 , 1 , constrained_layout = True , squeeze = False)
-    psm = plt.pcolormesh(timeToDiverge , rasterized = True , cmap = 'hot')
-    fig.colorbar(psm)
-    plt.show()
-    """
 
 
 def plot_phase_diagram_from_excel(filepath: str, sheetName = 0):
@@ -619,20 +584,22 @@ def plot_phase_diagram_from_excel(filepath: str, sheetName = 0):
     plt.show()
 
 
+collectData = True
+
 spreadsheetFilepath = "AData.xlsx"
 
-resolution = 360
+resolution = 16
 shadowScaleFactor = 1.001
 shadowDivergenceThreshold = 10
 shadowMaxRuntime = 60
 
-# in pi radians (so a value of 0.5 corresponds to 0.5pi radians)
-iVelA = 0.5
-iVelB = 0.5
+# in pi radians (so a value of 0.5 corresponds to 0.5pi radians or 90 degrees)
+iVelA = 0.75
+iVelB = 0.75
 upperThetaMin = 0.0
-upperThetaMax = 1.0
+upperThetaMax = 2.0
 lowerThetaMin = 0.0
-lowerThetaMax = 1.0
+lowerThetaMax = 2.0
 
 
 pendulums = []
@@ -653,8 +620,9 @@ def main(argv):
     # compare_two_pendulums(float(argv[0]), float(argv[1]), float(argv[2]), float(argv[3]))
     # compare_two_pendulums(iThetaA = initialVars[0], iThetaB = initialVars[1], iVelA = initialVars[2], iVelB = initialVars[3], secondPScaling = scalingVars)
     # phase_diagram(iVelA = 1.0, iVelB = 1.0, resolution = 240, epsilon = 10, secondPScaling = scalingVars)
-    run_phase_diagram_collect_data()
-    # plot_phase_diagram_from_excel(spreadsheetFilepath)
+    if collectData:
+        run_phase_diagram_collect_data()
+    plot_phase_diagram_from_excel(spreadsheetFilepath)
 
 def xmain(argv):
     global cpus
