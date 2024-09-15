@@ -589,14 +589,14 @@ collectData = True
 
 spreadsheetFilepath = "AData.xlsx"
 
-resolution = 16
+resolution = 180
 shadowScaleFactor = 1.001
 shadowDivergenceThreshold = 10
 shadowMaxRuntime = 60
 
 # in pi radians (so a value of 0.5 corresponds to 0.5pi radians or 90 degrees)
-iVelA = 0.75
-iVelB = 0.75
+iVelA = 0.25
+iVelB = 0.25
 upperThetaMin = 0.0
 upperThetaMax = 2.0
 lowerThetaMin = 0.0
